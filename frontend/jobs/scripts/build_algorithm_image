@@ -1,0 +1,42 @@
+pipeline {
+
+	agent any
+
+	environment {
+	  // Query the EC2 metadata service and return the current AWS region in which we're running
+	  region = sh (script: 'curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region', returnStdout: true).trim()
+
+		// SCM
+		GIT_URL = "${GIT_URL ?: "https://github.com/ICFI/dragon.git"}"
+		GIT_BRANCH = "${GIT_BRANCH ?: "origin/master"}"
+		imageName = 'sagemaker-algorithm'
+		sagemaker_workspace = "${WORKSPACE}/sagemaker"
+	}
+
+	stages {
+		stage('Preparation') {
+		  steps {
+					// $GIT_BRANCH looks like `origin/branch-name` so parse it.
+					git url: "$GIT_URL", branch: "$GIT_BRANCH".tokenize("/")[1]
+			}
+		}
+		stage('Build Algorithm Image') {
+		  steps {
+		    dir("$sagemaker_workspace/container") {
+			    sh "./build_and_push.sh ${imageName} ${env.BUILD_ID}"
+			  }
+			}
+		}
+	}
+	post {
+
+	  success {
+			build job: 'sagemaker-train-model', wait: false, parameters: [
+        [$class: 'StringParameterValue', name: 'imageName', value: "${imageName}" ],
+				[$class: 'StringParameterValue', name: 'imageVersion', value: "${env.BUILD_ID}" ]
+			]
+
+		}
+	}
+
+}

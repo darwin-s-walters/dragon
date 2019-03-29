@@ -1,0 +1,39 @@
+pipeline {
+
+	agent any
+
+	environment {
+
+	  // Query the EC2 metadata service and return the current AWS region in which we're running
+	  region = sh (script: 'curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region', returnStdout: true).trim()
+
+		// SCM
+		GIT_URL = "${GIT_URL ?: "https://github.com/ICFI/dragon.git"}"
+		sagemaker_workspace = "${WORKSPACE}/sagemaker"
+
+	}
+
+	stages {
+		stage('Preparation') {
+
+		  steps {
+				script {
+					envName = params.envName?params.envName:""
+					}
+					// $GIT_BRANCH looks like `origin/branch-name` so parse it.
+					git url: "$GIT_URL", branch: "$GIT_BRANCH".tokenize("/")[1]
+			}
+		}
+		stage('Deploy Model To Dev') {
+		  steps {
+			sh """
+				export AWS_DEFAULT_REGION=${region}
+				${sagemaker_workspace}/jobs/scripts/deploy_model.py --workspace=${sagemaker_workspace} --envname=${envName}
+			"""
+
+			}
+		}
+	}
+
+
+}

@@ -1,0 +1,30 @@
+pipeline {
+
+	agent any
+
+	environment {
+	  // Query the EC2 metadata service and return the current AWS region in which we're running
+	  region = sh (script: 'curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region', returnStdout: true).trim()
+
+		// SCM
+		GIT_URL = "${GIT_URL ?: "https://github.com/darwin-s-walters/dragon.git"}"
+		GIT_BRANCH = "${GIT_BRANCH ?: "origin/master"}"
+		frontend_workspace = "${WORKSPACE}/frontend"
+	}
+
+	stages {
+		stage('Preparation') {
+		  steps {
+					// $GIT_BRANCH looks like `origin/branch-name` so parse it.
+					git url: "$GIT_URL", branch: "$GIT_BRANCH".tokenize("/")[1]
+			}
+		}
+		stage('Deploy to S3') {
+		  steps {
+		    dir("$frontend_workspace/") {
+			    sh "aws s3 cp index.html s3://dev-icf-dragon-challenge"
+			  }
+			}
+		}
+	}
+}

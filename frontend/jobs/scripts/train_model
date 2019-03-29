@@ -1,0 +1,60 @@
+pipeline {
+
+	agent any
+
+	environment {
+
+	  // Query the EC2 metadata service and return the current AWS region in which we're running
+	  region = sh (script: 'curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region', returnStdout: true).trim()
+
+		// SCM
+		GIT_URL = "${GIT_URL ?: "https://github.com/ICFI/dragon.git"}"
+		GIT_BRANCH = "${GIT_BRANCH ?: "origin/master"}"
+		sagemaker_workspace = "${WORKSPACE}/sagemaker"
+		imageName = "${params.imageName}"
+		imageVersion = "${params.imageVersion}"
+		//timestamp = new Date().format("yyyyMMddHHmmss", TimeZone.getTimeZone('GMT-4'))
+		buildId = "${env.JOB_BASE_NAME}-build-${env.BUILD_ID}"//-${timestamp}"
+	}
+
+	stages {
+		stage('Preparation') {
+		  steps {
+					// $GIT_BRANCH looks like `origin/branch-name` so parse it.
+					git url: "$GIT_URL", branch: "$GIT_BRANCH".tokenize("/")[1]
+			}
+		}
+		stage('Train Model') {
+		  steps {
+
+			  script {
+			    modelUri = params.modelUri?params.modelUri:""
+			  }
+				sh """
+				  export AWS_DEFAULT_REGION=${region}
+				  ${sagemaker_workspace}/jobs/scripts/train_model.py --image=${imageName} --version=${imageVersion} --workspace=${sagemaker_workspace} --modeluri=${modelUri} --buildid=${buildId}
+				"""
+
+			}
+		}
+		stage('Validate Model') {
+		  steps {
+				sh """
+				  export AWS_DEFAULT_REGION=${region}
+				"""
+
+			}
+		}
+		stage('Deploy Model To Dev') {
+		  steps {
+				sh """
+				  export AWS_DEFAULT_REGION=${region}
+					${sagemaker_workspace}/jobs/scripts/deploy_model.py --workspace=${sagemaker_workspace} --buildid=${buildId} --envname=dev
+				"""
+
+			}
+		}
+	}
+
+
+}
